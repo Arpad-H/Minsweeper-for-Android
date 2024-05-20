@@ -1,6 +1,8 @@
 package com.example.minesweeper;
 
 
+import com.example.minesweeper.R;
+
 public class Field {
     private boolean isMine;
     private int minesAround;
@@ -103,5 +105,9 @@ public class Field {
 
             spriteID = R.drawable.tile_flagged;
 
+    }
+    public void incrementMinesAround() {
+        minesAround++;
+        setMinesAround(minesAround);
     }
 }

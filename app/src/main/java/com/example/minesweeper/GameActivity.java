@@ -1,202 +1,179 @@
 package com.example.minesweeper;
 
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.os.Bundle;
 import android.util.DisplayMetrics;
-import android.util.Log;
-import android.util.Pair;
 import android.widget.GridLayout;
 import android.widget.ImageButton;
 import android.widget.ImageView;
-import android.widget.LinearLayout;
 
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.lifecycle.ViewModelProvider;
 
-import java.util.Map;
-import java.util.Objects;
+import com.example.minesweeper.logic.Difficulty;
+import com.example.minesweeper.ui.SquareButton;
+
 import java.util.Timer;
 import java.util.TimerTask;
 
 public class GameActivity extends AppCompatActivity {
-    private static int NUM_ROWS;
-    private static int NUM_COLS;
-    private SquareButton buttonGrid[][];
+    private GameViewModel gameViewModel;
+    private GridLayout minefieldGrid;
     private Timer timer = new Timer();
-    private int secondsElapsed = 0;
-    Board board;
-    Difficulty difficulty;
-    int height;
-    int width;
-    GridLayout minefieldGrid;
+    private int height, width;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_game);
 
+        gameViewModel = new ViewModelProvider(this).get(GameViewModel.class);
+
         extractDifficultyFromIntent();
-        getScreenDimmensions();
-
-        NUM_COLS = difficulty.getCols();
-        NUM_ROWS = difficulty.getRows();
-        buttonGrid = new SquareButton[NUM_ROWS][NUM_COLS];
-        board = new Board(NUM_ROWS, NUM_COLS, difficulty.getMines());
-        board.setupBoard();
-
-        initializeGridLayout();
-        populateMinefieldWithButtons();
+        initializeScreenDimensions();
 
         setupSmileyButton();
-        updateElapsedTimeTimer();
-        updateMinesRemaining();
+        setupMinefieldGrid();
+
+        bindGameViewModelObservers();
+
+        startTimer();
     }
 
-    private void updateElapsedTimeTimer() {
-        this.timer.schedule(
-                new TimerTask() {
-                    @Override
-                    public void run() {
-                        updateTimer();
-                    }
-                }
-                , 0, 1000);
-    }
-
-    private void setupSmileyButton() {
-        ImageButton smiley = findViewById(R.id.gameStateIndicator);
-        smiley.setOnClickListener(v -> {
-            finish();
-            startActivity(getIntent());
-        });
-    }
-
-    private void initializeGridLayout() {
-        minefieldGrid = findViewById(R.id.gridLayout);
-        minefieldGrid.setRowCount(NUM_ROWS);
-        minefieldGrid.setColumnCount(NUM_COLS);
-    }
-
-    private void populateMinefieldWithButtons() {
-        int buttonDim = (int) (Math.min(height / NUM_ROWS, width / NUM_COLS) * 0.8);
-        for (int i = 0; i < NUM_ROWS; i++) {
-            for (int j = 0; j < NUM_COLS; j++) {
-                SquareButton button = new SquareButton(this, i, j);
-
-                // Set button layout parameters
-                GridLayout.LayoutParams params = new GridLayout.LayoutParams();
-                params.rowSpec = GridLayout.spec(i, 1.0f);
-                params.columnSpec = GridLayout.spec(j, 1.0f);
-                params.width = buttonDim;
-                params.height = buttonDim;
-                params.setMargins(2, 2, 2, 2);
-                button.setLayoutParams(params);
-
-                button.setBackground(getDrawable(R.drawable.tile_concealed));
-                button.setOnClickListener(v -> {
-
-                    Map<Pair<Integer, Integer>, Field> toReveal = board.revealField(button.row, button.col);
-                    for (Pair<Integer, Integer> pair : toReveal.keySet()) {
-                        SquareButton sb = buttonGrid[pair.first][pair.second];
-                        sb.updateButtonImg(Objects.requireNonNull(toReveal.get(pair)));
-                        sb.disable();
-                    }
-                    if (board.isGameOver()) endGame(board.isGameWon());
-
-                });
-                button.setOnLongClickListener(v -> {
-                    Log.d("LongClick", "Long click");
-                    Pair<Integer, Integer> p = board.toggleFlag(button.row, button.col);
-                    buttonGrid[p.first][p.second].updateButtonImg(Objects.requireNonNull(board.getField(p.first, p.second)));
-                    if (board.isGameOver()) endGame(board.isGameWon());
-                    updateMinesRemaining();
-                    return true;
-                });
-                buttonGrid[i][j] = button;
-                minefieldGrid.addView(button);
+    private void bindGameViewModelObservers() {
+        gameViewModel.getGameState().observe(this, gameState -> {
+            if (gameState.isGameOver()) {
+                endGame(gameState.isGameWon());
             }
-
-
-        }
+        });
+        gameViewModel.getElapsedTime().observe(this, this::updateElapsedTime);
+        gameViewModel.getRemainingMines().observe(this, this::updateRemainingMines);
     }
 
-    private void getScreenDimmensions() {
+    private void extractDifficultyFromIntent() {
+        Intent intent = getIntent();
+        String difficultyName = intent.getStringExtra(MainActivity.EXTRA_DIFFICULTY);
+        Difficulty difficulty = Difficulty.valueOf(difficultyName);
+        gameViewModel.initializeBoard(difficulty);
+    }
+
+    private void initializeScreenDimensions() {
         DisplayMetrics displayMetrics = new DisplayMetrics();
         getWindowManager().getDefaultDisplay().getMetrics(displayMetrics);
         height = displayMetrics.heightPixels;
         width = displayMetrics.widthPixels;
     }
 
-    private void extractDifficultyFromIntent() {
-        Intent intent = getIntent();
-        String difficultyName = intent.getStringExtra(MainActivity.EXTRA_DIFFICULTY);
-        difficulty = Difficulty.valueOf(difficultyName);
+    private void setupSmileyButton() {
+        ImageButton smiley = findViewById(R.id.gameStateIndicator);
+        smiley.setOnClickListener(v -> restartGame());
     }
 
-    private void updateTimer() {
-        runOnUiThread(() -> {
-            ImageView img_ones = findViewById(R.id.time_ones);
-            ImageView img_tens = findViewById(R.id.time_tens);
-            ImageView img_hundreds = findViewById(R.id.time_hundreds);
-            img_ones.setImageResource(getResources().getIdentifier("display_" + secondsElapsed % 10, "drawable", getPackageName()));
-            img_tens.setImageResource(getResources().getIdentifier("display_" + (secondsElapsed / 10) % 10, "drawable", getPackageName()));
-            img_hundreds.setImageResource(getResources().getIdentifier("display_" + (secondsElapsed / 100) % 10, "drawable", getPackageName()));
-            secondsElapsed++;
+    private void setupMinefieldGrid() {
+        minefieldGrid = findViewById(R.id.gridLayout);
+        minefieldGrid.setRowCount(gameViewModel.getNumRows());
+        minefieldGrid.setColumnCount(gameViewModel.getNumCols());
 
+        populateMinefieldWithButtons();
+    }
+
+    private void populateMinefieldWithButtons() {
+        int buttonDim = calculateButtonDimension();
+        for (int i = 0; i < gameViewModel.getNumRows(); i++) {
+            for (int j = 0; j < gameViewModel.getNumCols(); j++) {
+                SquareButton button = new SquareButton(this, i, j);
+                setupButtonLayout(button, buttonDim);
+                setupButtonListeners(button);
+                minefieldGrid.addView(button);
+                gameViewModel.addButton(i, j, button);
+            }
+        }
+    }
+
+    private int calculateButtonDimension() {
+        return (int) (Math.min(height / gameViewModel.getNumRows(), width / gameViewModel.getNumCols()) * 0.8);
+    }
+
+    private void setupButtonLayout(SquareButton button, int dimension) {
+        GridLayout.LayoutParams params = new GridLayout.LayoutParams();
+        params.width = dimension;
+        params.height = dimension;
+        params.setMargins(2, 2, 2, 2);
+        button.setLayoutParams(params);
+        button.setBackground(getDrawable(R.drawable.tile_concealed));
+    }
+
+    private void setupButtonListeners(SquareButton button) {
+        button.setOnClickListener(v -> gameViewModel.revealField(button.getRow(), button.getCol()));
+        button.setOnLongClickListener(v -> {
+            gameViewModel.toggleFlag(button.getRow(), button.getCol());
+            return true;
         });
     }
 
-    public void endGame(boolean win) {
+    private void startTimer() {
+        timer.schedule(new TimerTask() {
+            @Override
+            public void run() {
+                gameViewModel.incrementElapsedTime();
+            }
+        }, 0, 1000);
+    }
+
+    private void updateElapsedTime(int secondsElapsed) {
+        runOnUiThread(() -> {
+            ImageView imgOnes = findViewById(R.id.time_ones);
+            ImageView imgTens = findViewById(R.id.time_tens);
+            ImageView imgHundreds = findViewById(R.id.time_hundreds);
+            updateTimerImages(secondsElapsed, imgOnes, imgTens, imgHundreds);
+        });
+    }
+
+    private void updateRemainingMines(int remainingMines) {
+        runOnUiThread(() -> {
+            ImageView imgOnes = findViewById(R.id.mines_ones);
+            ImageView imgTens = findViewById(R.id.mines_tens);
+            ImageView imgHundreds = findViewById(R.id.mines_hundreds);
+            updateTimerImages(remainingMines, imgOnes, imgTens, imgHundreds);
+        });
+    }
+
+    private void updateTimerImages(int value, ImageView imgOnes, ImageView imgTens, ImageView imgHundreds) {
+        imgOnes.setImageResource(getResources().getIdentifier("display_" + value % 10, "drawable", getPackageName()));
+        imgTens.setImageResource(getResources().getIdentifier("display_" + (value / 10) % 10, "drawable", getPackageName()));
+        imgHundreds.setImageResource(getResources().getIdentifier("display_" + (value / 100) % 10, "drawable", getPackageName()));
+    }
+
+    private void endGame(boolean win) {
         timer.cancel();
         timer.purge();
-        if (win) {
-            ImageButton smiley = findViewById(R.id.gameStateIndicator);
-            smiley.setImageResource(R.drawable.game_won);
-            for (Pair<Integer, Integer> pair : board.getRemainingFields().keySet()) {
-                SquareButton sb = buttonGrid[pair.first][pair.second];
-                sb.updateButtonImg(Objects.requireNonNull(board.getField(pair.first, pair.second)));
-                sb.disable();
-            }
-            showGameOverDialog(true);
-
-        } else {
-            ImageButton smiley = findViewById(R.id.gameStateIndicator);
-            smiley.setImageResource(R.drawable.game_over);
-            showGameOverDialog(false);
-        }
-
-    }
-
-    private void updateMinesRemaining() {
-        runOnUiThread(() -> {
-            ImageView img_ones = findViewById(R.id.mines_ones);
-            ImageView img_tens = findViewById(R.id.mines_tens);
-            ImageView img_hundreds = findViewById(R.id.mines_hundreds);
-            img_ones.setImageResource(getResources().getIdentifier("display_" + board.getFlaggedTotal() % 10, "drawable", getPackageName()));
-            img_tens.setImageResource(getResources().getIdentifier("display_" + (board.getFlaggedTotal() / 10) % 10, "drawable", getPackageName()));
-            img_hundreds.setImageResource(getResources().getIdentifier("display_" + (board.getFlaggedTotal() / 100) % 10, "drawable", getPackageName()));
-        });
+        ImageButton smiley = findViewById(R.id.gameStateIndicator);
+        smiley.setImageResource(win ? R.drawable.game_won : R.drawable.game_over);
+        showGameOverDialog(win);
     }
 
     private void showGameOverDialog(boolean win) {
-        String message = win ? "You won!" : "You lost!";
-        String title = win ? "Victory!" : "Game Over";
-
+        String message = win ? getResources().getString(R.string.message_win) : getResources().getString(R.string.message_loss);
+        String title = win ? getResources().getString(R.string.title_win) : getResources().getString(R.string.title_loss);
         new AlertDialog.Builder(this)
                 .setTitle(title)
                 .setMessage(message)
-                .setPositiveButton("Back to Main Menu", (dialog, which) -> {
-                    Intent intent = new Intent(GameActivity.this, MainActivity.class);
-                    intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
-                    startActivity(intent);
-                    finish();
-                })
-                .setNegativeButton("Play Again", (dialog, which) -> {
-                    finish();
-                    startActivity(getIntent());
-                })
+                .setPositiveButton(getResources().getString(R.string.btn_back_to_main_menu), (dialog, which) -> returnToMainMenu())
+                .setNegativeButton(getResources().getString(R.string.btn_play_again), (dialog, which) -> restartGame())
                 .setCancelable(false)
                 .show();
+    }
+
+    private void returnToMainMenu() {
+        Intent intent = new Intent(GameActivity.this, MainActivity.class);
+        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
+        startActivity(intent);
+        finish();
+    }
+
+    private void restartGame() {
+        finish();
+        startActivity(getIntent());
     }
 }

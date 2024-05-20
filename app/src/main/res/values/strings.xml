@@ -3,4 +3,10 @@
     <string name="button_easy">Easy</string>
     <string name="button_medium">Medium</string>
     <string name="button_hard">Hard</string>
+    <string name="title_win">Victory!</string>
+    <string name="title_loss">Game Over!</string>
+    <string name="message_win">You cleared all the Mines. Do you want to go again?</string>
+    <string name="message_loss">Hard</string>
+    <string name="btn_back_to_main_menu">Back to Main Menu</string>
+    <string name="btn_play_again">Play Again</string>
 </resources>

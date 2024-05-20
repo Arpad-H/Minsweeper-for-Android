@@ -5,9 +5,18 @@ import android.util.AttributeSet;
 
 import androidx.core.content.res.ResourcesCompat;
 
+
+
 public class SquareButton extends androidx.appcompat.widget.AppCompatButton {
-    int row;
-    int col;
+    private int row;
+    private int col;
+    public int getRow() {
+        return row;
+    }
+
+    public int getCol() {
+        return col;
+    }
 
     public SquareButton(Context context, int row, int col) {
         super(context);
@@ -33,6 +42,7 @@ public class SquareButton extends androidx.appcompat.widget.AppCompatButton {
     public void updateButtonImg(Field field) {
         setBackground(ResourcesCompat.getDrawable(getResources(), field.getSpriteID(), null));
     }
+
     public void disable() {
         setEnabled(false);
     }
